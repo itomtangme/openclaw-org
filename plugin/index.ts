@@ -193,9 +193,11 @@ export default function architectureEnforcerPlugin(api: OpenClawPluginApi) {
       const force = parts.includes("--force");
       const skipArchive = parts.includes("--skip-archive");
 
-      // Verify the calling agent is HR (or the command is from main/user)
-      const callerAgent = cmdCtx.agentId ?? "main";
-      if (callerAgent !== "main" && callerAgent !== archConfig.hrAgentId) {
+      // Verify the calling agent is HR or main (or user-level/unknown).
+      // cmdCtx.agentId is the agent that invoked the command. If it's a known
+      // non-HR agent, block it. If undefined (direct user or main), allow.
+      const callerAgent = cmdCtx.agentId;
+      if (callerAgent && callerAgent !== "main" && callerAgent !== archConfig.hrAgentId) {
         return {
           text: `⛔ Only **HR** (\`${archConfig.hrAgentId}\`) or **main** can offboard agents.\n` +
             `Route this request to HR instead.`,

@@ -3,7 +3,7 @@
  * detects missing/outdated hierarchy files, and writes them.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
 
@@ -571,6 +571,8 @@ async function enforceSoulHierarchy(
     const fullSoul = buildSoul(meta);
     if (!config.dryRun) {
       await writeFile(soulPath, fullSoul, "utf-8");
+    } else {
+      log.info(`[arch-enforcer] [DRY-RUN] Would create ${meta.id}/SOUL.md`);
     }
     log.info(`[arch-enforcer] ${meta.id}/SOUL.md: created from scratch`);
     return "created";
@@ -819,14 +821,15 @@ ${departments || "(none — install via sysadmin)"}
  *
  * 1. Validate the agent exists and is not a core/protected agent
  * 2. Check the agent has no children (refuse if it does — must remove children first)
- * 3. Remove the agent from its parent's `subagents.allowAgents` in openclaw.json
- * 4. Archive the agent's workspace directory (rename to workspace-<id>.archived-<timestamp>)
- * 5. Remove the agent from openclaw.json agents.list
- * 6. Update the main workspace AGENTS.md registry
- * 7. Clean up any references in parent/sibling AGENTS.md files
+ * 3. Recursively collect all agents to remove (if --force, includes children)
+ * 4. Archive each agent's workspace (rename to workspace-<id>.archived-<timestamp>)
+ * 5. Remove agents from parent allowAgents + agents.list
+ * 6. Write openclaw.json once (not per child)
+ * 7. Clean up stale references in remaining agents' workspace files
+ * 8. Update the main workspace AGENTS.md registry
  *
- * Does NOT call `openclaw agents remove` — it writes the config changes directly
- * so the plugin can orchestrate the full cleanup atomically.
+ * Works on a deep copy of the agents list to avoid mutating the plugin's
+ * live config object. Writes openclaw.json exactly once at the end.
  */
 export async function offboardAgent(
   agentId: string,
@@ -849,18 +852,33 @@ export async function offboardAgent(
     return result;
   }
 
-  const agents: any[] = config?.agents?.list ?? [];
-  const agentIdx = agents.findIndex((a: any) => a.id === agentId);
-  if (agentIdx === -1) {
+  // Work on a deep copy so we never mutate the live plugin config
+  const agentsList: any[] = JSON.parse(JSON.stringify(config?.agents?.list ?? []));
+  const agentEntry = agentsList.find((a: any) => a.id === agentId);
+  if (!agentEntry) {
     result.errors.push(`Agent "${agentId}" not found in openclaw.json`);
     return result;
   }
+  result.steps.push(`Found agent "${agentId}"`);
 
-  const agentEntry = agents[agentIdx];
-  result.steps.push(`Found agent "${agentId}" at index ${agentIdx}`);
+  // ── Step 2: Collect all agents to remove (target + descendants if --force) ──
+  const toRemove: string[] = [];
 
-  // ── Step 2: Check for children ──
-  const children = agentEntry?.subagents?.allowAgents ?? [];
+  function collectDescendants(id: string): void {
+    const entry = agentsList.find((a: any) => a.id === id);
+    if (!entry) return;
+    const children: string[] = entry?.subagents?.allowAgents ?? [];
+    for (const childId of children) {
+      if (PROTECTED_AGENTS.includes(childId)) {
+        result.errors.push(`Cannot cascade-remove protected agent "${childId}"`);
+        continue;
+      }
+      collectDescendants(childId);
+    }
+    toRemove.push(id);
+  }
+
+  const children: string[] = agentEntry?.subagents?.allowAgents ?? [];
   if (children.length > 0 && !opts.force) {
     result.errors.push(
       `Agent "${agentId}" has ${children.length} child agent(s): ${children.join(", ")}. ` +
@@ -869,88 +887,75 @@ export async function offboardAgent(
     return result;
   }
 
-  // If force + has children, we need to recursively offboard children first
-  if (children.length > 0 && opts.force) {
+  collectDescendants(agentId);
+  if (toRemove.length > 1) {
     log.warn(
-      `[arch-enforcer] Force-offboarding "${agentId}" — recursively removing ${children.length} child(ren): ${children.join(", ")}`
+      `[arch-enforcer] Cascade offboard: removing ${toRemove.length} agent(s): ${toRemove.join(", ")}`
     );
-    for (const childId of [...children]) {
-      const childResult = await offboardAgent(childId, config, archConfig, log, opts);
-      if (childResult.status === "failed") {
-        result.errors.push(`Failed to offboard child "${childId}": ${childResult.errors.join("; ")}`);
-        // Continue with other children — don't abort the whole operation
-      } else {
-        result.steps.push(`Offboarded child: ${childId}`);
-      }
-    }
   }
 
-  // ── Step 3: Resolve the workspace path ──
+  // ── Step 3: Archive workspaces ──
   const defaults = config?.agents?.defaults ?? {};
   const defaultWorkspace = defaults.workspace ?? join(archConfig.openclawDir, "workspace");
-  let workspace: string;
-  if (agentEntry.workspace) {
-    workspace = agentEntry.workspace;
-  } else if (agentId === "main") {
-    workspace = defaultWorkspace;
-  } else {
-    workspace = join(archConfig.openclawDir, `workspace-${agentId}`);
-  }
 
-  // ── Step 4: Archive the workspace ──
-  if (!opts.skipArchive && existsSync(workspace)) {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    const archivePath = `${workspace}.archived-${timestamp}`;
+  for (const removeId of toRemove) {
+    const entry = agentsList.find((a: any) => a.id === removeId);
+    if (!entry) continue;
 
-    if (!archConfig.dryRun) {
-      const { rename } = await import("node:fs/promises");
-      try {
-        await rename(workspace, archivePath);
-        result.steps.push(`Archived workspace: ${workspace} → ${archivePath}`);
-        log.info(`[arch-enforcer] Archived ${workspace} → ${archivePath}`);
-      } catch (err: any) {
-        result.errors.push(`Failed to archive workspace: ${err?.message ?? err}`);
-        log.warn(`[arch-enforcer] Failed to archive ${workspace}: ${err?.message}`);
-        // Non-fatal — continue with the rest of offboarding
-      }
+    let workspace: string;
+    if (entry.workspace) {
+      workspace = entry.workspace;
+    } else if (removeId === "main") {
+      workspace = defaultWorkspace;
     } else {
-      result.steps.push(`[DRY-RUN] Would archive: ${workspace} → ${workspace}.archived-${timestamp}`);
+      workspace = join(archConfig.openclawDir, `workspace-${removeId}`);
     }
-  } else if (!existsSync(workspace)) {
-    result.steps.push(`Workspace not found (already removed?): ${workspace}`);
-  }
 
-  // ── Step 5: Remove from parent's allowAgents ──
-  for (const other of agents) {
-    const allowed: string[] = other?.subagents?.allowAgents ?? [];
-    const idx = allowed.indexOf(agentId);
-    if (idx !== -1) {
+    if (!opts.skipArchive && existsSync(workspace)) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const archivePath = `${workspace}.archived-${timestamp}`;
+
       if (!archConfig.dryRun) {
-        allowed.splice(idx, 1);
+        try {
+          await rename(workspace, archivePath);
+          result.steps.push(`Archived: ${removeId} → ${archivePath}`);
+          log.info(`[arch-enforcer] Archived ${workspace} → ${archivePath}`);
+        } catch (err: any) {
+          result.errors.push(`Failed to archive ${removeId}: ${err?.message ?? err}`);
+          log.warn(`[arch-enforcer] Failed to archive ${workspace}: ${err?.message}`);
+        }
+      } else {
+        result.steps.push(`[DRY-RUN] Would archive: ${removeId}`);
       }
-      result.steps.push(`Removed "${agentId}" from ${other.id}'s subagents.allowAgents`);
-      log.info(`[arch-enforcer] Removed "${agentId}" from ${other.id}'s allowAgents`);
+    } else if (!existsSync(workspace)) {
+      result.steps.push(`Workspace not found for ${removeId} (already removed?)`);
     }
   }
 
-  // ── Step 6: Remove from agents.list ──
-  // Re-find index since recursive offboarding of children may have shifted indices
-  const currentIdx = agents.findIndex((a: any) => a.id === agentId);
-  if (currentIdx !== -1) {
-    if (!archConfig.dryRun) {
-      agents.splice(currentIdx, 1);
+  // ── Step 4: Remove from allowAgents of remaining agents ──
+  const removeSet = new Set(toRemove);
+  for (const agent of agentsList) {
+    if (removeSet.has(agent.id)) continue; // will be removed entirely
+    const allowed: string[] = agent?.subagents?.allowAgents ?? [];
+    const before = allowed.length;
+    const cleaned = allowed.filter((id: string) => !removeSet.has(id));
+    if (cleaned.length < before) {
+      agent.subagents.allowAgents = cleaned;
+      result.steps.push(`Cleaned ${agent.id}'s allowAgents (removed ${before - cleaned.length})`);
     }
-    result.steps.push(`Removed "${agentId}" from agents.list`);
   }
 
-  // ── Step 7: Write updated openclaw.json ──
+  // ── Step 5: Remove from agents.list ──
+  const remaining = agentsList.filter((a: any) => !removeSet.has(a.id));
+  result.steps.push(`Removed ${toRemove.length} agent(s) from agents.list: ${toRemove.join(", ")}`);
+
+  // ── Step 6: Write openclaw.json once ──
   const configPath = join(archConfig.openclawDir, "openclaw.json");
   if (!archConfig.dryRun) {
     try {
       const raw = await readFile(configPath, "utf-8");
       const parsed = JSON.parse(raw);
-      // Use our in-memory agents array (already cleaned by steps 5-6) as source of truth
-      parsed.agents.list = agents;
+      parsed.agents.list = remaining;
       await writeFile(configPath, JSON.stringify(parsed, null, 2) + "\n", "utf-8");
       result.steps.push(`Updated openclaw.json`);
       log.info(`[arch-enforcer] Written updated openclaw.json`);
@@ -961,20 +966,24 @@ export async function offboardAgent(
     result.steps.push(`[DRY-RUN] Would update openclaw.json`);
   }
 
-  // ── Step 8: Clean up references in remaining agents' workspace files ──
+  // ── Step 7: Clean up stale references in remaining agents' workspace files ──
   if (!archConfig.dryRun) {
-    try {
-      await cleanupAgentReferences(agentId, agents, archConfig, log);
-      result.steps.push(`Cleaned up references to "${agentId}" in sibling/parent workspaces`);
-    } catch (err: any) {
-      result.errors.push(`Reference cleanup failed: ${err?.message ?? err}`);
+    for (const removeId of toRemove) {
+      try {
+        await cleanupAgentReferences(removeId, remaining, archConfig, log);
+      } catch (err: any) {
+        result.errors.push(`Reference cleanup for "${removeId}" failed: ${err?.message ?? err}`);
+      }
     }
+    result.steps.push(`Cleaned up stale references in remaining workspaces`);
   }
 
-  // ── Step 9: Update main AGENTS.md ──
+  // ── Step 8: Update main AGENTS.md ──
+  // Build a temporary config with the updated agents list for the registry update
   if (!archConfig.dryRun) {
     try {
-      await updateMainAgentsRegistry(config, archConfig, log);
+      const updatedConfig = { ...config, agents: { ...config.agents, list: remaining } };
+      await updateMainAgentsRegistry(updatedConfig, archConfig, log);
       result.steps.push(`Updated main workspace AGENTS.md`);
     } catch (err: any) {
       result.errors.push(`Failed to update main AGENTS.md: ${err?.message ?? err}`);
