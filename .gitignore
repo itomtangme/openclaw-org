@@ -1,0 +1,17 @@
+# Ignore
+node_modules/
+dist/
+*.js
+!plugin/src/**
+*.map
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sensitive — never commit
+*.env
+*.key
+*.pem
+*.secret
+openclaw.json
