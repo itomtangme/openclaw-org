@@ -14,9 +14,10 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 
 import {
   scanAndEnforce,
@@ -36,6 +37,10 @@ export default function architectureEnforcerPlugin(api: OpenClawPluginApi) {
   const config = api.config;
   const pluginCfg = (api.pluginConfig ?? {}) as Partial<ArchConfig>;
 
+  // __dirname equivalent for ESM
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+
   const archConfig: ArchConfig = {
     openclawDir: pluginCfg.openclawDir ?? join(homedir(), ".openclaw"),
     dryRun: pluginCfg.dryRun ?? false,
@@ -45,18 +50,17 @@ export default function architectureEnforcerPlugin(api: OpenClawPluginApi) {
     hrAgentId: pluginCfg.hrAgentId ?? "hr",
   };
 
-  // Resolve template dir — look in skill location first, then workspace
+  // Resolve template dir — look in multiple possible skill installation paths
   if (!archConfig.templateDir) {
-    const skillPath = join(
-      archConfig.openclawDir,
-      "skills",
-      "openclaw-org",
-      "skill",
-      "assets",
-      "templates"
-    );
-    const wsPath = join(archConfig.openclawDir, "workspace", "templates");
-    archConfig.templateDir = existsSync(skillPath) ? skillPath : wsPath;
+    const candidates = [
+      // Installed as a skill via clawhub or symlink
+      join(archConfig.openclawDir, "skills", "openclaw-org", "skill", "assets", "templates"),
+      // Installed as a plugin (plugin-relative path)
+      join(__dirname, "..", "skill", "assets", "templates"),
+      // Fallback: user workspace templates
+      join(archConfig.openclawDir, "workspace", "templates"),
+    ];
+    archConfig.templateDir = candidates.find((p) => existsSync(p)) ?? candidates[candidates.length - 1];
   }
 
   // ──────────────────────────────────────────────────────────────────────────

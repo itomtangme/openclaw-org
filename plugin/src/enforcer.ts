@@ -863,8 +863,11 @@ export async function offboardAgent(
 
   // ── Step 2: Collect all agents to remove (target + descendants if --force) ──
   const toRemove: string[] = [];
+  const visited = new Set<string>();
 
   function collectDescendants(id: string): void {
+    if (visited.has(id)) return; // cycle protection
+    visited.add(id);
     const entry = agentsList.find((a: any) => a.id === id);
     if (!entry) return;
     const children: string[] = entry?.subagents?.allowAgents ?? [];
