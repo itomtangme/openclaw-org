@@ -46,44 +46,36 @@ git clone https://github.com/itomtangme/openclaw-org.git \
 
 ### 2. Install as plugin (for enforcement)
 
-Create a symlink or copy the plugin into your plugins directory:
+Create a symlink into your plugins directory:
 ```bash
-# Option A: Symlink (recommended — stays updated)
+mkdir -p ~/.openclaw/workspace/plugins
 ln -s ~/.openclaw/skills/openclaw-org \
   ~/.openclaw/workspace/plugins/architecture-enforcer
-
-# Option B: Copy
-cp -r ~/.openclaw/skills/openclaw-org \
-  ~/.openclaw/workspace/plugins/architecture-enforcer
 ```
 
-### 3. Enable the plugin
-Add to your `openclaw.json` under `plugins`:
-```json
-{
-  "plugins": {
-    "allow": ["architecture-enforcer"]
-  }
-}
-```
+### 3. Register the plugin
 
-### 4. (Optional) Configure
-```json
+Add to your `openclaw.json`:
+```jsonc
 {
   "plugins": {
-    "allow": ["architecture-enforcer"],
-    "config": {
+    "entries": {
       "architecture-enforcer": {
-        "dryRun": false,
-        "forceOverwrite": false,
-        "skipAgents": []
+        "enabled": true,
+        "config": {
+          "dryRun": false,
+          "forceOverwrite": false,
+          "skipAgents": []
+        }
       }
     }
   }
 }
 ```
 
-### 5. Restart gateway
+> ⚠️ Plugin config goes inside `plugins.entries.<id>.config`, NOT `plugins.config`.
+
+### 4. Restart gateway
 ```bash
 openclaw gateway restart
 ```
@@ -134,6 +126,23 @@ The **HR agent** (`hr`) is a Core (L1-C) agent responsible for all agent onboard
 
 See `agent/hr/SOUL.md` for HR's full onboarding/offboarding workflows.
 
+### Installing the HR Agent
+
+HR is **not auto-installed** — only its blueprint files are included. To activate:
+
+```bash
+# 1. Register agent
+openclaw agents add hr
+
+# 2. Copy workspace blueprint
+cp -r ~/.openclaw/skills/openclaw-org/agent/hr/* ~/.openclaw/workspace-hr/
+
+# 3. Add to main's routing (openclaw.json: main.subagents.allowAgents += "hr")
+
+# 4. Restart gateway
+openclaw gateway restart
+```
+
 ## CLI
 
 ```bash
@@ -151,7 +160,7 @@ openclaw plugins cli architecture-enforcer offboard-agent <agent-id> --dry-run
 
 ## Architecture Overview (v2.2)
 
-See `skill/references/ARCHITECTURE.md` for the complete specification.
+See `references/ARCHITECTURE.md` (relative to this skill directory) for the complete specification.
 
 ### 6-Layer Hierarchy
 
@@ -180,31 +189,34 @@ Rule: children inherit or downgrade tier. Never upgrade beyond parent.
 
 ```
 openclaw-org/
-├── package.json                    # NPM package (plugin entry point)
-├── openclaw.plugin.json            # Plugin manifest for OpenClaw
+├── package.json                    # "main": "index.ts" — plugin entrypoint
+├── openclaw.plugin.json            # Plugin manifest (same dir as entrypoint)
+├── index.ts                        # Plugin lifecycle hooks, /enforce, /offboard
+├── src/
+│   └── enforcer.ts                 # Core enforcement + offboarding engine
 ├── agent/
-│   └── hr/                         # HR agent workspace files
-│       ├── SOUL.md                 # HR persona + onboard/offboard workflows
-│       ├── AGENTS.md               # HR sub-agent registry
-│       ├── IDENTITY.md             # HR identity
-│       ├── TOOLS.md                # HR tool reference
-│       └── HR-DETECTION.md         # Guidance for main on routing to HR
-├── plugin/
-│   ├── index.ts                    # Plugin entry — hooks, /enforce, /offboard
-│   └── src/
-│       └── enforcer.ts             # Core enforcement + offboarding engine
+│   └── hr/                         # HR agent workspace blueprint files
+│       ├── SOUL.md
+│       ├── AGENTS.md
+│       ├── IDENTITY.md
+│       ├── TOOLS.md
+│       └── HR-DETECTION.md
+├── plugin/                         # Legacy entrypoints (backwards compat)
+│   ├── index.ts
+│   └── src/enforcer.ts
 ├── skill/
 │   ├── SKILL.md                    # This file (skill entry point)
-│   ├── assets/
-│   │   └── templates/
-│   │       ├── SOUL-template.md
-│   │       ├── AGENTS-template.md
-│   │       ├── MANIFEST-template.md
-│   │       └── STATUS-template.md
+│   ├── assets/templates/           # Workspace provisioning templates
+│   │   ├── SOUL-template.md
+│   │   ├── AGENTS-template.md
+│   │   ├── MANIFEST-template.md
+│   │   └── STATUS-template.md
 │   └── references/
 │       └── ARCHITECTURE.md         # Complete v2.2 spec (source of truth)
 ├── docs/
-│   └── DESIGN.md                   # Design decisions & rationale
+│   ├── DESIGN.md                   # Design decisions & rationale
+│   └── DEPLOYMENT.md               # Legacy deployment guide
+├── DEPLOYMENT.md                   # Full deployment guide (current)
 ├── README.md
 └── LICENSE
 ```

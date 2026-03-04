@@ -1,4 +1,4 @@
-# 🏛️ OpenClaw Subagent Architecture
+# 🏛️ OpenClaw-Org: Hierarchical Agent Architecture
 
 Hierarchical multi-agent architecture framework with **automated enforcement** for [OpenClaw](https://openclaw.com).
 
@@ -40,20 +40,44 @@ This package combines:
 ## Quick Start
 
 ### 1. Clone
+
 ```bash
 git clone https://github.com/itomtangme/openclaw-org.git \
   ~/.openclaw/skills/openclaw-org
 ```
 
 ### 2. Symlink plugin
+
 ```bash
+mkdir -p ~/.openclaw/workspace/plugins
 ln -s ~/.openclaw/skills/openclaw-org \
   ~/.openclaw/workspace/plugins/architecture-enforcer
 ```
 
-### 3. Enable
+### 3. Register in openclaw.json
+
+Add the plugin entry to your `openclaw.json`:
+
+```jsonc
+{
+  "plugins": {
+    "entries": {
+      "architecture-enforcer": {
+        "enabled": true,
+        "config": {
+          "dryRun": false,
+          "forceOverwrite": false,
+          "skipAgents": []
+        }
+      }
+    }
+  }
+}
+```
+
+### 4. Restart
+
 ```bash
-openclaw config set plugins.allow '["architecture-enforcer"]'
 openclaw gateway restart
 ```
 
@@ -61,7 +85,7 @@ That's it. The plugin will audit all agent workspaces on startup and patch any m
 
 ## Deployment Guide
 
-For a comprehensive step-by-step deployment guide covering prerequisites, configuration, secrets management, verification, troubleshooting, and upgrades, see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+For a comprehensive step-by-step deployment guide covering prerequisites, configuration, secrets management, verification, troubleshooting, and upgrades, see **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 ## How It Works
 
@@ -95,7 +119,7 @@ openclaw.json (agents.list + subagents.allowAgents)
 The plugin reads `openclaw.json` and derives hierarchy:
 - `agents.list[].id` → agent identity
 - `agents.list[].subagents.allowAgents` → parent→child relationships
-- `main` = L0, `sysadmin`/`full-power` = L1-C (by convention)
+- `main` = L0, `sysadmin`/`full-power`/`hr` = L1-C (by convention)
 - Depth = walk parent chain → determines layer (L1-D, L2, L3, etc.)
 
 ### Enforcement Triggers
@@ -134,20 +158,26 @@ L0  Orchestrator (main) — CEO, routes & synthesizes
 
 ## Configuration
 
-```json
+Plugin config goes inside `plugins.entries.<id>.config` in `openclaw.json`:
+
+```jsonc
 {
   "plugins": {
-    "allow": ["architecture-enforcer"],
-    "config": {
+    "entries": {
       "architecture-enforcer": {
-        "dryRun": false,
-        "forceOverwrite": false,
-        "skipAgents": ["my-special-agent"]
+        "enabled": true,
+        "config": {
+          "dryRun": false,
+          "forceOverwrite": false,
+          "skipAgents": ["my-special-agent"]
+        }
       }
     }
   }
 }
 ```
+
+> ⚠️ Do NOT use `plugins.config` (top-level). That key is not recognized by OpenClaw >= 2026.2.x.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -160,6 +190,7 @@ L0  Orchestrator (main) — CEO, routes & synthesizes
 ## Commands
 
 ### Slash Commands
+
 ```
 /enforce              — Full audit of all agents
 /enforce planner      — Enforce specific agent
@@ -168,6 +199,7 @@ L0  Orchestrator (main) — CEO, routes & synthesizes
 ```
 
 ### CLI
+
 ```bash
 # Enforce architecture
 openclaw plugins cli architecture-enforcer enforce-architecture
@@ -186,21 +218,20 @@ openclaw plugins cli architecture-enforcer offboard-agent <agent-id> --skip-arch
 
 ```
 openclaw-org/
-├── package.json                    # Plugin entry + metadata
-├── openclaw.plugin.json            # OpenClaw plugin manifest
+├── package.json                    # "main": "index.ts" — plugin entrypoint
+├── openclaw.plugin.json            # OpenClaw plugin manifest (same dir as entrypoint)
+├── index.ts                        # Plugin lifecycle hooks, /enforce, /offboard commands
+├── src/
+│   └── enforcer.ts                 # Core enforcement + offboarding engine
 ├── agent/
-│   └── hr/                         # HR agent workspace files
+│   └── hr/                         # HR agent workspace blueprint files
 │       ├── SOUL.md                 # HR persona + onboard/offboard workflows
 │       ├── AGENTS.md               # HR sub-agent registry
 │       ├── IDENTITY.md             # HR identity
 │       ├── TOOLS.md                # HR tool reference
 │       └── HR-DETECTION.md         # Guidance for main on routing to HR
-├── plugin/
-│   ├── index.ts                    # Lifecycle hooks, /enforce, /offboard commands
-│   └── src/
-│       └── enforcer.ts             # Core enforcement + offboarding engine
 ├── skill/
-│   ├── SKILL.md                    # Skill entry point
+│   ├── SKILL.md                    # Skill entry point (agents read this)
 │   ├── assets/templates/           # Workspace file templates
 │   │   ├── SOUL-template.md
 │   │   ├── AGENTS-template.md
@@ -208,11 +239,39 @@ openclaw-org/
 │   │   └── STATUS-template.md
 │   └── references/
 │       └── ARCHITECTURE.md         # Complete v2.2 specification
+├── plugin/                         # Legacy entrypoints (backwards compat)
+│   ├── index.ts                    # Re-exports from root index.ts
+│   └── src/
+│       └── enforcer.ts             # Re-exports from root src/enforcer.ts
 ├── docs/
-│   └── DESIGN.md                   # Design rationale
+│   ├── DESIGN.md                   # Design rationale
+│   └── DEPLOYMENT.md               # Legacy deployment guide (see DEPLOYMENT.md at root)
+├── DEPLOYMENT.md                   # 📖 Full deployment guide
 ├── README.md
 └── LICENSE
 ```
+
+> **Layout rationale**: The plugin entrypoint (`index.ts`) and manifest (`openclaw.plugin.json`) are at the repo root. OpenClaw resolves the manifest from the same directory as `package.json`'s `"main"` field. Keeping them together avoids the "manifest not found" / "unsafe symlink" errors that occur when the manifest and entrypoint are in different directories.
+
+## Installing the HR Agent
+
+The HR agent is **not auto-installed** — the plugin only enforces hierarchy on agents that already exist in `openclaw.json`. To install HR:
+
+```bash
+# 1. Register the agent
+openclaw agents add hr
+
+# 2. Copy blueprint workspace files
+cp -r ~/.openclaw/skills/openclaw-org/agent/hr/* ~/.openclaw/workspace-hr/
+
+# 3. Add hr to main's routing
+# In openclaw.json, add "hr" to main's subagents.allowAgents
+
+# 4. Restart
+openclaw gateway restart
+```
+
+After restart, the enforcer will patch HR's workspace with hierarchy metadata, and all other agents will have the "No Agent Installation" policy injected.
 
 ## Prior Art
 
