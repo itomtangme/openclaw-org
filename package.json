@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-architecture-enforcer",
+  "name": "openclaw-subagent-architecture",
   "version": "1.0.0",
   "description": "Hierarchical multi-agent architecture framework with automated enforcement for OpenClaw. Combines a skill (docs/templates/SKILL.md) with a plugin (lifecycle hooks) that auto-provisions SOUL.md, AGENTS.md, AGENT-MANIFEST.md when new agents are added.",
   "type": "module",
@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/itomtangme/openclaw-architecture-enforcer.git"
+    "url": "https://github.com/itomtangme/openclaw-subagent-architecture.git"
   },
   "keywords": [
     "openclaw",
