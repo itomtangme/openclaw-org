@@ -39,13 +39,13 @@ This package combines:
 
 ### 1. Clone
 ```bash
-git clone https://github.com/itomtangme/openclaw-subagent-architecture.git \
-  ~/.openclaw/skills/openclaw-subagent-architecture
+git clone https://github.com/itomtangme/openclaw-org.git \
+  ~/.openclaw/skills/openclaw-org
 ```
 
 ### 2. Symlink plugin
 ```bash
-ln -s ~/.openclaw/skills/openclaw-subagent-architecture \
+ln -s ~/.openclaw/skills/openclaw-org \
   ~/.openclaw/workspace/plugins/architecture-enforcer
 ```
 
@@ -168,7 +168,7 @@ openclaw plugins cli architecture-enforcer enforce-architecture --force
 ## File Structure
 
 ```
-openclaw-subagent-architecture/
+openclaw-org/
 ├── package.json                    # Plugin entry + metadata
 ├── openclaw.plugin.json            # OpenClaw plugin manifest
 ├── plugin/

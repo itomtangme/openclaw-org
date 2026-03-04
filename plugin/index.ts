@@ -47,7 +47,7 @@ export default function architectureEnforcerPlugin(api: OpenClawPluginApi) {
     const skillPath = join(
       archConfig.openclawDir,
       "skills",
-      "openclaw-subagent-architecture",
+      "openclaw-org",
       "skill",
       "assets",
       "templates"

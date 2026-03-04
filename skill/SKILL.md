@@ -1,5 +1,5 @@
 ---
-name: openclaw-subagent-architecture
+name: openclaw-org
 description: >
   Hierarchical multi-agent architecture framework for OpenClaw with **automated enforcement**.
   Combines a skill (docs, templates, architecture spec) with a plugin (lifecycle hooks) that
@@ -38,10 +38,10 @@ This package bundles **two things**:
 
 ### 1. Install as skill (for agent knowledge)
 ```bash
-clawhub install openclaw-subagent-architecture
+clawhub install openclaw-org
 # or clone:
-git clone https://github.com/itomtangme/openclaw-subagent-architecture.git \
-  ~/.openclaw/skills/openclaw-subagent-architecture
+git clone https://github.com/itomtangme/openclaw-org.git \
+  ~/.openclaw/skills/openclaw-org
 ```
 
 ### 2. Install as plugin (for enforcement)
@@ -49,11 +49,11 @@ git clone https://github.com/itomtangme/openclaw-subagent-architecture.git \
 Create a symlink or copy the plugin into your plugins directory:
 ```bash
 # Option A: Symlink (recommended — stays updated)
-ln -s ~/.openclaw/skills/openclaw-subagent-architecture \
+ln -s ~/.openclaw/skills/openclaw-org \
   ~/.openclaw/workspace/plugins/architecture-enforcer
 
 # Option B: Copy
-cp -r ~/.openclaw/skills/openclaw-subagent-architecture \
+cp -r ~/.openclaw/skills/openclaw-org \
   ~/.openclaw/workspace/plugins/architecture-enforcer
 ```
 
@@ -160,7 +160,7 @@ Rule: children inherit or downgrade tier. Never upgrade beyond parent.
 ## File Structure
 
 ```
-openclaw-subagent-architecture/
+openclaw-org/
 ├── package.json                    # NPM package (plugin entry point)
 ├── openclaw.plugin.json            # Plugin manifest for OpenClaw
 ├── plugin/
