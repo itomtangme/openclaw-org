@@ -59,6 +59,9 @@ Add to your `openclaw.json`:
 ```jsonc
 {
   "plugins": {
+    "load": {
+      "paths": ["~/.openclaw/workspace/plugins"]
+    },
     "entries": {
       "architecture-enforcer": {
         "enabled": true,
@@ -74,6 +77,7 @@ Add to your `openclaw.json`:
 ```
 
 > ⚠️ Plugin config goes inside `plugins.entries.<id>.config`, NOT `plugins.config`.
+> ⚠️ `plugins.load.paths` is **required** for the gateway to discover plugins. Without it, the plugin won't load.
 
 ### 4. Restart gateway
 ```bash

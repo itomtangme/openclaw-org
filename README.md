@@ -34,7 +34,7 @@ This package combines:
 - 🛡️ **Idempotent** — only writes when files are missing or incorrect
 - 📊 **4-Tier Model System** — cost-efficient model allocation per layer
 - 🔌 **Plug-and-Play Departments** — add/remove domain directors anytime
-- 📈 **Observability** — STATUS.md dashboard, heartbeat protocol
+- 📈 **Observability** — STATUS.md dashboard (auto-generated on each enforcement pass), heartbeat protocol
 - 🧩 **Result Caching** — shared cache prevents redundant work across branches
 
 ## Quick Start
@@ -61,6 +61,9 @@ Add the plugin entry to your `openclaw.json`:
 ```jsonc
 {
   "plugins": {
+    "load": {
+      "paths": ["~/.openclaw/workspace/plugins"]
+    },
     "entries": {
       "architecture-enforcer": {
         "enabled": true,
@@ -74,6 +77,8 @@ Add the plugin entry to your `openclaw.json`:
   }
 }
 ```
+
+> **Important**: `plugins.load.paths` tells the gateway where to scan for plugin directories. Without it, the plugin won't be discovered.
 
 ### 4. Restart
 
@@ -158,11 +163,14 @@ L0  Orchestrator (main) — CEO, routes & synthesizes
 
 ## Configuration
 
-Plugin config goes inside `plugins.entries.<id>.config` in `openclaw.json`:
+Plugin config goes inside `plugins.entries.<id>.config` in `openclaw.json`. You must also set `plugins.load.paths` so the gateway discovers the plugin:
 
 ```jsonc
 {
   "plugins": {
+    "load": {
+      "paths": ["~/.openclaw/workspace/plugins"]
+    },
     "entries": {
       "architecture-enforcer": {
         "enabled": true,
@@ -178,6 +186,7 @@ Plugin config goes inside `plugins.entries.<id>.config` in `openclaw.json`:
 ```
 
 > ⚠️ Do NOT use `plugins.config` (top-level). That key is not recognized by OpenClaw >= 2026.2.x.
+> ⚠️ Without `plugins.load.paths`, the gateway will not scan for or discover the plugin.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|

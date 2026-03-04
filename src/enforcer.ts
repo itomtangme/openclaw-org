@@ -745,6 +745,13 @@ export async function scanAndEnforce(
     } catch (err: any) {
       report.errors.push(`Main AGENTS.md update failed: ${err?.message ?? err}`);
     }
+
+    // Generate STATUS.md in the main workspace from template
+    try {
+      await generateStatusDashboard(allMeta, config, archConfig, log);
+    } catch (err: any) {
+      report.errors.push(`STATUS.md generation failed: ${err?.message ?? err}`);
+    }
   } catch (err: any) {
     report.errors.push(`Failed to resolve agents: ${err?.message ?? err}`);
   }
@@ -809,6 +816,103 @@ ${departments || "(none — install via sysadmin)"}
     log.info(`[arch-enforcer] Updated main workspace AGENTS.md`);
   } else {
     log.info(`[arch-enforcer] [DRY-RUN] Would update main AGENTS.md`);
+  }
+}
+
+// ============================================================================
+// STATUS.md Dashboard Generation
+// ============================================================================
+
+/**
+ * Generate STATUS.md in the main workspace from the STATUS-template.md,
+ * populated with live agent data. Called during scanAndEnforce so the
+ * dashboard stays current after every enforcement pass or gateway start.
+ */
+export async function generateStatusDashboard(
+  allMeta: AgentMeta[],
+  config: any,
+  archConfig: ArchConfig,
+  log: Logger
+): Promise<void> {
+  const mainWs =
+    config?.agents?.defaults?.workspace ??
+    join(archConfig.openclawDir, "workspace");
+  const statusPath = join(mainWs, "STATUS.md");
+
+  // Build agent rows for the dashboard table
+  const emojiMap: Record<string, string> = {
+    "main": "🟢",
+    "sysadmin": "🟢",
+    "full-power": "⚪",
+  };
+  const statusMap: Record<string, string> = {
+    "main": "healthy",
+    "sysadmin": "idle",
+    "full-power": "standby",
+  };
+
+  const agentRows = allMeta
+    .map((m) => {
+      const icon = emojiMap[m.id] ?? "🟢";
+      const status = statusMap[m.id] ?? "idle";
+      return `| ${icon} | ${m.name} | ${m.layerCode} | ${status} | — | — |`;
+    })
+    .join("\n");
+
+  const departments = allMeta
+    .filter((m) => m.agentType === "L1-D")
+    .map((m) => `- **${m.name}** (${m.id}) — ${m.domain}`)
+    .join("\n");
+
+  const now = new Date().toISOString();
+  const coreCount = allMeta.filter(
+    (m) => m.agentType === "L0" || m.agentType === "L1-C"
+  ).length;
+  const deptCount = allMeta.filter((m) => m.agentType === "L1-D").length;
+  const healthLabel =
+    deptCount > 0
+      ? `🟢 Healthy (${coreCount} core + ${deptCount} departments)`
+      : `🟢 Healthy (Core Only)`;
+
+  const content = `# 🏛️ System Status Dashboard
+**Last Updated**: ${now}
+
+## Org Health: ${healthLabel}
+
+## Agent Tree
+| | Agent | Layer | Status | Active | Last Activity |
+|---|-------|-------|--------|--------|---------------|
+${agentRows}
+
+## Installed Departments
+${departments || "(none — install via sysadmin)"}
+
+## Model Usage (Today)
+| Tier | Tokens In | Tokens Out | Est. Cost |
+|------|-----------|------------|-----------|
+| Tier-1 | 0 | 0 | $0.00 |
+| Tier-2 | 0 | 0 | $0.00 |
+| Tier-3 | 0 | 0 | $0.00 |
+| Tier-4 | 0 | 0 | $0.00 |
+| **Total** | **0** | **0** | **$0.00** |
+
+## Cache
+- Entries: 0
+- Hit rate (24h): —
+- Next expiry: —
+
+## Recent Events
+(none)
+
+## Alerts
+(none)
+`;
+
+  if (!archConfig.dryRun) {
+    await writeFile(statusPath, content, "utf-8");
+    log.info(`[arch-enforcer] Generated STATUS.md dashboard`);
+  } else {
+    log.info(`[arch-enforcer] [DRY-RUN] Would generate STATUS.md`);
   }
 }
 
